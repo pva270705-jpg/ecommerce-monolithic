@@ -1,0 +1,253 @@
+{
+  "info": {
+    "name": "Prompt 2 - E-commerce Monolithic API",
+    "description": "Luồng kiểm tra theo phiếu chấm: đăng ký normal/score 10, đăng nhập, từ chối order thiếu token, mua X/Y và nhận Shipment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Register NORMAL",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"{{username}}\",\"fullname\":\"Normal User\",\"password\":\"{{password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('username', 'normal_' + Date.now());"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Account registered', () => pm.response.to.have.status(201));",
+              "pm.test('Password is not returned', () => pm.expect(pm.response.text()).not.to.include(pm.collectionVariables.get('password')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Login and save JWT",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login returns token', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().token).to.be.a('string'); });",
+              "const data = pm.response.json();",
+              "pm.collectionVariables.set('token', data.token);",
+              "pm.test('Role is normal and score is 10', () => { pm.expect(data.user.role).to.eql('normal'); pm.expect(data.user.membershipScore).to.eql(10); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Order without token returns 401",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/orders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"items\":[{\"pid\":1,\"qty\":2}]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unauthenticated order is rejected', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Get X/Y product IDs",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/products"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Product list contains X and Y', () => {",
+              " pm.response.to.have.status(200); const products=pm.response.json().data;",
+              " const x=products.find(p=>p.pname==='X'), y=products.find(p=>p.pname==='Y');",
+              " pm.expect(x,'Product X').to.exist; pm.expect(y,'Product Y').to.exist;",
+              " pm.collectionVariables.set('productXId',x.pid); pm.collectionVariables.set('productYId',y.pid);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Order X x2 and Y x5, create Shipment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/orders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"items\":[{\"pid\":{{productXId}},\"qty\":2},{\"pid\":{{productYId}},\"qty\":5}]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Order and shipment created', () => {",
+              " pm.response.to.have.status(201); const data=pm.response.json().data;",
+              " pm.collectionVariables.set('orderId',data.oid);",
+              " pm.expect(data.details).to.have.lengthOf(2);",
+              " pm.expect(data.shipments[0].status).to.eql('PENDING');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Read order, details and shipment",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/orders/{{orderId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Order details and shipment are returned', () => {",
+              " pm.response.to.have.status(200); const order=pm.response.json().data;",
+              " pm.expect(order.details).to.have.lengthOf(2); pm.expect(order.shipments[0].status).to.eql('PENDING');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": "MatKhau123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "productXId",
+      "value": ""
+    },
+    {
+      "key": "productYId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    }
+  ]
+}

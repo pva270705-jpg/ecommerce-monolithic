@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log*
+.env
+.git
+.gitignore
+2. Prompt_monolithic.doc
+PHIEU_CHAM.pdf
+E-commerce-database-diagram.png
